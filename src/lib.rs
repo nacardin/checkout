@@ -682,4 +682,41 @@ mod tests {
         assert_eq!(response.scheme, "visa");
         assert_eq!(response.issuer_country.as_deref(), Some("GB"));
     }
+
+    #[tokio::test]
+    async fn payment_session_request_processed() {
+        let Some(client) = client() else { return };
+        let request = CreatePaymentSessionRequest {
+            amount: 2000,
+            currency: Currency::USD,
+            reference: "rust-sdk-test".to_string(),
+            billing: None,
+            customer: None,
+            success_url: "https://example.com/success".to_string(),
+            failure_url: "https://example.com/failure".to_string(),
+        };
+
+        let response = client.create_payment_session(&request).await.unwrap();
+
+        assert!(response.id.starts_with("ps_"));
+        assert!(response.payment_session_secret.starts_with("pss_"));
+    }
+
+    #[tokio::test]
+    async fn payment_session_request_declined() {
+        let Some(client) = client() else { return };
+        let request = CreatePaymentSessionRequest {
+            amount: 0,
+            currency: Currency::USD,
+            reference: "rust-sdk-test".to_string(),
+            billing: None,
+            customer: None,
+            success_url: "https://example.com/success".to_string(),
+            failure_url: "https://example.com/failure".to_string(),
+        };
+
+        let response = client.create_payment_session(&request).await;
+
+        assert!(matches!(response, Err(Error::InvalidData(_))));
+    }
 }
