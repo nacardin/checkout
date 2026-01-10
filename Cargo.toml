@@ -5,6 +5,7 @@ authors = ["Trevor Wilson <trevor@telco.in>"]
 edition = "2018"
 
 [dependencies]
+bon = "2.3.0"
 reqwest = { version = "0.13.1", features = ["json", "form"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.17"

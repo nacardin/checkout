@@ -65,28 +65,27 @@ let response = client.create_payment_session(&request).await.unwrap();
 
 ### Creating a Payment
 
-You can create a payment using the `CreatePaymentRequestBuilder`:
+You can create a payment using the builder pattern provided by the `bon` crate:
 
 ```rust
-use checkout::{CreatePaymentRequestBuilder, Currency, PaymentRequestSource, Amount};
+use checkout::{CreatePaymentRequest, Currency, PaymentRequestSource, Amount};
 use bigdecimal::BigDecimal;
 
-let request = CreatePaymentRequestBuilder::new(
-    Currency::USD,
-    "YOUR_PROCESSING_CHANNEL_ID".to_string(),
-)
-.source(PaymentRequestSource::Card {
-    number: "4242424242424242".to_string(),
-    expiry_month: 12,
-    expiry_year: 2025,
-    name: Some("Test User".to_string()),
-    cvv: Some("123".to_string()),
-    stored: None,
-    billing_address: None,
-    phone: None,
-})
-.amount(Amount::from(Currency::USD, BigDecimal::from(1000)))
-.build();
+let request = CreatePaymentRequest::builder()
+    .currency(Currency::USD)
+    .processing_channel_id("YOUR_PROCESSING_CHANNEL_ID".to_string())
+    .source(PaymentRequestSource::Card {
+        number: "4242424242424242".to_string(),
+        expiry_month: 12,
+        expiry_year: 2025,
+        name: Some("Test User".to_string()),
+        cvv: Some("123".to_string()),
+        stored: None,
+        billing_address: Box::new(None),
+        phone: None,
+    })
+    .amount(Amount::from(Currency::USD, BigDecimal::from(1000)))
+    .build();
 
 let response = client.create_payment(&request).await.unwrap();
 ```

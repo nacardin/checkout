@@ -187,9 +187,10 @@ pub enum PaymentRequestDestination {
 }
 
 /// A type of payment
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum PaymentType {
     /// A regular payment
+    #[default]
     Regular,
 
     /// A merchant-initiated recurring payment

@@ -464,7 +464,9 @@ mod tests {
         //
         // https://docs.checkout.com/testing
 
-        CreatePaymentRequestBuilder::new(Currency::USD, processing_channel_id)
+        CreatePaymentRequest::builder()
+            .currency(Currency::USD)
+            .processing_channel_id(processing_channel_id)
             .source(PaymentRequestSource::Card {
                 number,
                 expiry_month: month,
@@ -492,7 +494,9 @@ mod tests {
         //
         // https://docs.checkout.com/testing
 
-        CreatePaymentRequestBuilder::new(Currency::USD, processing_channel_id)
+        CreatePaymentRequest::builder()
+            .currency(Currency::USD)
+            .processing_channel_id(processing_channel_id)
             .source(PaymentRequestSource::CurrencyAccount {
                 id: currency_account_id,
             })
