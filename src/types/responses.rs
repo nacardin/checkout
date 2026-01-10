@@ -1,4 +1,4 @@
-use super::*;
+use super::{Action, Deserialize, Links, PaymentDetails, PaymentProcessed, PendingPayment};
 
 /// The response for a successful authentication
 #[derive(Deserialize, Debug, Clone)]
@@ -24,7 +24,7 @@ pub struct OAuthTokenResponse {
 #[serde(untagged)]
 pub enum CreatePaymentResponse {
     /// The payment was processed immediately
-    Processed(PaymentProcessed),
+    Processed(Box<PaymentProcessed>),
 
     /// The payment is being processed asynchronously or further action is
     /// required
@@ -36,6 +36,20 @@ pub type GetPaymentDetailsResponse = PaymentDetails;
 
 /// Response to get payment actions
 pub type GetPaymentActionsResponse = Vec<Action>;
+
+/// Response for creating a payment session
+#[derive(Deserialize, Debug, Clone)]
+pub struct CreatePaymentSessionResponse {
+    /// The payment session identifier
+    pub id: String,
+
+    /// The payment session secret
+    pub payment_session_secret: String,
+
+    /// The links related to the payment session
+    #[serde(rename = "_links")]
+    pub links: Links,
+}
 
 /// Response to capture a payment
 #[derive(Deserialize, Debug, Clone)]
@@ -92,8 +106,8 @@ pub struct CardMetadataResponse {
     /// The issuer's Bank Identification Number (BIN)
     pub bin: String,
 
-    /// The global card scheme. For example, "american_express",
-    /// "cartes_bancaires", "diners_club_international", "discover",
+    /// The global card scheme. For example, "`american_express`",
+    /// "`cartes_bancaires`", "`diners_club_international`", "discover",
     /// "jcb", "mastercard", or "visa".
     pub scheme: String,
 
