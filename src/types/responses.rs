@@ -24,7 +24,7 @@ pub struct OAuthTokenResponse {
 #[serde(untagged)]
 pub enum CreatePaymentResponse {
     /// The payment was processed immediately
-    Processed(Box<PaymentProcessed>),
+    Processed(PaymentProcessed),
 
     /// The payment is being processed asynchronously or further action is
     /// required

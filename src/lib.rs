@@ -124,7 +124,6 @@ impl fmt::Display for Environment {
 
 impl Environment {
     /// Returns the appropriate url for the api depending on the environment
-    #[must_use]
     pub fn api_url(&self) -> &str {
         match self {
             Environment::Sandbox => "https://api.sandbox.checkout.com",
@@ -146,7 +145,7 @@ impl Environment {
 /// A client that can be used to access the Checkout API
 #[derive(Clone, Debug)]
 pub struct Client {
-    http: ReqwestClient,
+    http_client: ReqwestClient,
     environment: Environment,
     username: SecretString,
     password: SecretString,
@@ -157,7 +156,7 @@ impl Client {
     #[must_use]
     pub fn new(username: SecretString, password: SecretString, environment: Environment) -> Client {
         Client {
-            http: ReqwestClient::new(),
+            http_client: ReqwestClient::new(),
             environment,
             username,
             password,
@@ -190,7 +189,7 @@ impl Client {
         };
 
         let response = self
-            .http
+            .http_client
             .post(&url)
             .basic_auth(
                 self.username.expose_secret(),
@@ -216,7 +215,7 @@ impl Client {
     {
         let token = self.authorize(scope).await?;
 
-        let response = self.http.get(url).bearer_auth(token).send().await?;
+        let response = self.http_client.get(url).bearer_auth(token).send().await?;
 
         if response.status().is_success() {
             Ok(response.json().await?)
@@ -233,7 +232,7 @@ impl Client {
         let token = self.authorize(scope).await?;
 
         let response = self
-            .http
+            .http_client
             .post(url)
             .bearer_auth(token)
             .json(body)
@@ -258,7 +257,7 @@ impl Client {
     {
         let token = self.authorize(scope).await?;
 
-        self.http
+        self.http_client
             .post(url)
             .bearer_auth(token)
             .json(body)
@@ -370,7 +369,7 @@ impl Client {
 
     /// Creates a payment session for the Flow integration.
     ///
-    /// [`POST /payment-sessions`](https://api-reference.checkout.com/#operation/createAPaymentSession)
+    /// [`POST /payment-sessions`](https://api-reference.checkout.com/#operation/CreatePaymentSession)
     pub async fn create_payment_session(
         &self,
         request: &CreatePaymentSessionRequest,

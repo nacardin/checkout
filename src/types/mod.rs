@@ -93,8 +93,8 @@ pub struct PaymentDetails {
 
     /// The links related to the payment
     ///
-    /// - Required: "self", "actions"
-    /// - Optional: "void", "capture", "refund"
+    /// - Required: `"self"`, `"actions"`
+    /// - Optional: `"void"`, `"capture"`, `"refund"`
     #[serde(rename = "_links")]
     pub links: Option<Links>,
 }
@@ -134,7 +134,7 @@ pub enum PaymentRequestSource {
         stored: Option<bool>,
 
         /// The billing address of the cardholder
-        billing_address: Box<Option<Address>>,
+        billing_address: Option<Address>,
 
         /// The phone number of the cardholder
         phone: Option<PhoneNumber>,
@@ -247,8 +247,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit",
-        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
+        /// The source of the funds used to fund the card payout: `"credit"`,
+        /// `"debit"`, `"prepaid"`, `"deposit_account"`, `"mobile_money_account"`, `"cash"`
         source_of_funds: String,
     },
 
@@ -272,8 +272,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit",
-        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
+        /// The source of the funds used to fund the card payout: `"credit"`,
+        /// `"debit"`, `"prepaid"`, `"deposit_account"`, `"mobile_money_account"`, `"cash"`
         source_of_funds: String,
     },
 
@@ -297,8 +297,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit",
-        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
+        /// The source of the funds used to fund the card payout: `"credit"`,
+        /// `"debit"`, `"prepaid"`, `"deposit_account"`, `"mobile_money_account"`, `"cash"`
         source_of_funds: String,
     },
 }
@@ -387,7 +387,32 @@ pub struct DestinationInstruction {
     /// "medical_treatment", "emergency_need", "leisure", "savings", "gifts",
     /// "donations", "financial_services", "it_services", "investment", "insurance",
     /// "loan_payment", "pension", "royalties", "other", "income"
-    pub purpose: Option<String>,
+    pub purpose: Option<PayoutPurpose>,
+}
+
+/// The purpose of a payout
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum PayoutPurpose {
+    FamilySupport,
+    Expatriation,
+    TravelAndTourism,
+    Education,
+    MedicalTreatment,
+    EmergencyNeed,
+    Leisure,
+    Savings,
+    Gifts,
+    Donations,
+    FinancialServices,
+    ItServices,
+    Investment,
+    Insurance,
+    LoanPayment,
+    Pension,
+    Royalties,
+    Other,
+    Income,
 }
 
 /// A phone number
@@ -661,8 +686,8 @@ pub struct PendingPayment {
 
     /// The links related to the payment
     ///
-    /// - Required: "self"
-    /// - Optional: "redirect"
+    /// - Required: `"self"`
+    /// - Optional: `"redirect"`
     #[serde(rename = "_links")]
     pub links: Option<Links>,
 }
@@ -702,7 +727,7 @@ pub struct _3dsStatus {
 
     /// Verification to ensure the integrity of the response
     ///
-    /// Example: "Y"
+    /// Example: `"Y"`
     pub signature_valid: Option<String>,
 
     /// Indicates whether or not the cardholder was authenticated
