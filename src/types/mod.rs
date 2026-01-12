@@ -16,7 +16,7 @@ pub use responses::*;
 /// The details of a payment
 #[derive(Deserialize, Debug, Clone)]
 pub struct PaymentDetails {
-    /// The payment's unique identifier (<= 30 characters, format `pay_*`)
+    /// The payment's unique identifier (<= 30 characters, format: `pay_*`)
     pub id: String,
 
     /// The date/time the payment was requested
@@ -68,7 +68,7 @@ pub struct PaymentDetails {
     pub payment_ip: Option<String>,
 
     /// Information about the recipient of the payment's funds. Relevant for
-    /// both Account Funding Transactions and VISA or `MasterCard` domestic UK
+    /// both Account Funding Transactions and VISA or MasterCard domestic UK
     /// transactions processed by Financial Institutions.
     ///
     /// See: [Account Funding Transactions](https://docs.checkout.com/payments/manage-payments/account-funding-transactions)
@@ -93,8 +93,8 @@ pub struct PaymentDetails {
 
     /// The links related to the payment
     ///
-    /// - Required: `"self"`, `"actions"`
-    /// - Optional: `"void"`, `"capture"`, `"refund"`
+    /// - Required: "self", "actions"
+    /// - Optional: "void", "capture", "refund"
     #[serde(rename = "_links")]
     pub links: Option<Links>,
 }
@@ -247,8 +247,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit"
-        /// "debit" "prepaid" "`deposit_account`" "`mobile_money_account`" "cash"
+        /// The source of the funds used to fund the card payout: "credit",
+        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
         source_of_funds: String,
     },
 
@@ -272,8 +272,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit"
-        /// "debit" "prepaid" "`deposit_account`" "`mobile_money_account`" "cash"
+        /// The source of the funds used to fund the card payout: "credit",
+        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
         source_of_funds: String,
     },
 
@@ -297,8 +297,8 @@ pub enum PaymentSenderDetails {
         /// The type of identifier used as the reference.
         reference_type: String,
 
-        /// The source of the funds used to fund the card payout: "credit"
-        /// "debit" "prepaid" "`deposit_account`" "`mobile_money_account`" "cash"
+        /// The source of the funds used to fund the card payout: "credit",
+        /// "debit", "prepaid", "deposit_account", "mobile_money_account", "cash"
         source_of_funds: String,
     },
 }
@@ -383,10 +383,10 @@ pub struct DestinationInstruction {
     /// - IN (India)
     /// - MX (Mexico)
     ///
-    /// "`family_support`" "expatriation" "`travel_and_tourism`" "education"
-    /// "`medical_treatment`" "`emergency_need`" "leisure" "savings" "gifts"
-    /// "donations" "`financial_services`" "`it_services`" "investment" "insurance"
-    /// "`loan_payment`" "pension" "royalties" "other" "income"
+    /// "family_support", "expatriation", "travel_and_tourism", "education",
+    /// "medical_treatment", "emergency_need", "leisure", "savings", "gifts",
+    /// "donations", "financial_services", "it_services", "investment", "insurance",
+    /// "loan_payment", "pension", "royalties", "other", "income"
     pub purpose: Option<String>,
 }
 
@@ -571,7 +571,7 @@ pub type Metadata = HashMap<String, String>;
 /// The response when a payment was processed successfully
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PaymentProcessed {
-    /// The payment's unique identifier (<= 30 characters, format `pay_*`)
+    /// The payment's unique identifier (<= 30 characters, format: `pay_*`)
     pub id: String,
 
     /// The unique identifier for the action performed against this payment (<=
@@ -632,8 +632,8 @@ pub struct PaymentProcessed {
 
     /// The links related to the payment
     ///
-    /// - Required: `"self"`, `"actions"`
-    /// - Optional: `"void"`, `"capture"`, `"refund"`
+    /// - Required: "self", "actions"
+    /// - Optional: "void", "capture", "refund"
     #[serde(rename = "_links")]
     pub links: Option<Links>,
 }
@@ -642,7 +642,7 @@ pub struct PaymentProcessed {
 /// action is required
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PendingPayment {
-    /// The payment's unique identifier (<= 30 characters, format `pay_*`)
+    /// The payment's unique identifier (<= 30 characters, format: `pay_*`)
     pub id: String,
 
     /// The status of the payment
@@ -661,8 +661,8 @@ pub struct PendingPayment {
 
     /// The links related to the payment
     ///
-    /// - Required: `"self"`
-    /// - Optional: `"redirect"`
+    /// - Required: "self"
+    /// - Optional: "redirect"
     #[serde(rename = "_links")]
     pub links: Option<Links>,
 }
@@ -702,7 +702,7 @@ pub struct _3dsStatus {
 
     /// Verification to ensure the integrity of the response
     ///
-    /// Example: `"Y"`
+    /// Example: "Y"
     pub signature_valid: Option<String>,
 
     /// Indicates whether or not the cardholder was authenticated

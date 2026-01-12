@@ -2,7 +2,7 @@
 name = "checkout"
 version = "0.4.0"
 authors = ["Trevor Wilson <trevor@telco.in>"]
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 bon = "2.3.0"

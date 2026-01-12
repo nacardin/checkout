@@ -106,8 +106,8 @@ pub struct CardMetadataResponse {
     /// The issuer's Bank Identification Number (BIN)
     pub bin: String,
 
-    /// The global card scheme. For example, "`american_express`",
-    /// "`cartes_bancaires`", "`diners_club_international`", "discover",
+    /// The global card scheme. For example, "american_express",
+    /// "cartes_bancaires", "diners_club_international", "discover",
     /// "jcb", "mastercard", or "visa".
     pub scheme: String,
 

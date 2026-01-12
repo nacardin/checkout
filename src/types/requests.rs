@@ -9,7 +9,7 @@ use super::{
 /// The request body to be used to authenticate
 #[derive(Serialize, Debug, Clone)]
 pub struct OAuthTokenRequest {
-    /// Probably "`client_credentials`"
+    /// Probably "client_credentials"
     pub grant_type: String,
 
     /// Determines what endpoints the requested token can access
@@ -112,7 +112,7 @@ pub struct CreatePaymentRequest {
     pub payment_ip: Option<String>,
 
     /// Information about the recipient of the payment's funds. Relevant for
-    /// both Account Funding Transactions and VISA or `MasterCard` domestic UK
+    /// both Account Funding Transactions and VISA or MasterCard domestic UK
     /// transactions processed by Financial Institutions.
     ///
     /// See: [Account Funding Transactions](https://docs.checkout.com/payments/manage-payments/account-funding-transactions)
