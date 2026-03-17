@@ -7,5 +7,5 @@ pub mod metadata;
 /// Models for Payments API
 pub mod payments;
 
-/// Shared models across APIs
+/// Shared models
 pub mod shared;

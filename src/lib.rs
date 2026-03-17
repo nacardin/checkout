@@ -10,6 +10,9 @@
 #![warn(clippy::missing_panics_doc, clippy::pedantic)]
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 use std::{convert::TryFrom, fmt, str::FromStr};
 
 pub use reqwest::StatusCode;
@@ -186,6 +189,16 @@ pub struct OAuthTokenResponse {
     pub scope: String,
 }
 
+/// Buffer subtracted from `expires_in` so we refresh before actual expiry.
+const TOKEN_EXPIRY_BUFFER: Duration = Duration::from_secs(30);
+
+/// A cached OAuth token with its expiry instant.
+#[derive(Debug, Clone)]
+struct CachedToken {
+    access_token: String,
+    expires_at: Instant,
+}
+
 /// A client that can be used to access the Checkout API
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -193,6 +206,7 @@ pub struct Client {
     environment: Environment,
     username: SecretString,
     password: SecretString,
+    token_cache: Arc<RwLock<HashMap<String, CachedToken>>>,
 }
 
 impl Client {
@@ -204,6 +218,7 @@ impl Client {
             environment,
             username,
             password,
+            token_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -226,6 +241,17 @@ impl Client {
     }
 
     async fn authorize(&self, scope: &str) -> Result<String, Error> {
+        // Check cache (read lock, dropped before any .await)
+        {
+            let cache = self.token_cache.read().expect("token cache poisoned");
+            if let Some(cached) = cache.get(scope) {
+                if Instant::now() < cached.expires_at {
+                    return Ok(cached.access_token.clone());
+                }
+            }
+        }
+
+        // Cache miss or expired — fetch a new token
         let url = format!("{}/connect/token", self.environment.access_url());
         let body = OAuthTokenRequest {
             grant_type: "client_credentials".to_string(),
@@ -246,8 +272,27 @@ impl Client {
         let status = response.status();
         match status {
             StatusCode::OK => {
-                let body: OAuthTokenResponse = response.json().await?;
-                Ok(body.access_token)
+                let token_response: OAuthTokenResponse = response.json().await?;
+                let expires_at = Instant::now()
+                    + Duration::from_secs(u64::from(token_response.expires_in))
+                    - TOKEN_EXPIRY_BUFFER;
+
+                let access_token = token_response.access_token.clone();
+
+                // Store in cache (write lock, no .await held)
+                {
+                    let mut cache =
+                        self.token_cache.write().expect("token cache poisoned");
+                    cache.insert(
+                        scope.to_owned(),
+                        CachedToken {
+                            access_token: token_response.access_token,
+                            expires_at,
+                        },
+                    );
+                }
+
+                Ok(access_token)
             }
             _ => Err(Error::Unauthorized),
         }

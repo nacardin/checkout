@@ -19,5 +19,3 @@ Cargo.lock
 !.vscode/settings.json
 !.vscode/extensions.json
 
-# OpenAPI
-.openapi/
