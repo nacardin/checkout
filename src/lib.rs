@@ -281,8 +281,7 @@ impl Client {
 
                 // Store in cache (write lock, no .await held)
                 {
-                    let mut cache =
-                        self.token_cache.write().expect("token cache poisoned");
+                    let mut cache = self.token_cache.write().expect("token cache poisoned");
                     cache.insert(
                         scope.to_owned(),
                         CachedToken {

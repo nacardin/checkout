@@ -113,9 +113,7 @@ async fn payment_request_processed() {
         BigDecimal::try_from(20.00).unwrap(),
         processing_channel_id,
     );
-    let payment: &'static _ = Box::leak(Box::new(payment));
-
-    let response = client.payments().create_payment(payment).await.unwrap();
+    let response = client.payments().create_payment(&payment).await.unwrap();
 
     let processed_payment = match response {
         CreatePaymentResponse::Processed(processed) => processed,
@@ -154,9 +152,7 @@ async fn payment_request_declined() {
         BigDecimal::try_from(123.05).unwrap(),
         processing_channel_id,
     );
-    let payment: &'static _ = Box::leak(Box::new(payment));
-
-    let response = client.payments().create_payment(payment).await;
+    let response = client.payments().create_payment(&payment).await;
 
     assert!(response.is_ok());
 }
@@ -175,9 +171,7 @@ async fn payment_request_invalid() {
         BigDecimal::try_from(123.12).unwrap(),
         processing_channel_id,
     );
-    let payment: &'static _ = Box::leak(Box::new(payment));
-
-    let response = client.payments().create_payment(payment).await;
+    let response = client.payments().create_payment(&payment).await;
 
     assert!(response.is_ok());
 }
@@ -199,9 +193,7 @@ async fn payout_request_processed() {
         processing_channel_id,
         currency_account_id,
     );
-    let payment: &'static _ = Box::leak(Box::new(payment));
-
-    let response = client.payments().create_payment(payment).await.unwrap();
+    let response = client.payments().create_payment(&payment).await.unwrap();
 
     let processed_payment = match response {
         CreatePaymentResponse::Processed(processed) => processed,
