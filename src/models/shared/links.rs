@@ -30,7 +30,7 @@ pub type Links = HashMap<String, Link>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Link {
     /// The link URL
-    href: String,
+    pub href: String,
 }
 
 /// A link to the associated request for the current response
