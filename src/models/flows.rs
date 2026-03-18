@@ -37,10 +37,13 @@ pub struct CreatePaymentSessionRequest {
 }
 
 /// Response for creating a payment session
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CreatePaymentSessionResponse {
     /// The payment session identifier
     pub id: String,
+
+    /// A unique token representing the payment session, used to initialize Flow
+    pub payment_session_token: String,
 
     /// The payment session secret
     pub payment_session_secret: String,

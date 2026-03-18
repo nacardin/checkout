@@ -1,3 +1,4 @@
+use base64::Engine;
 use checkout::models::flows::{CreatePaymentSessionRequest, CreatePaymentSessionResponse};
 use checkout::models::shared::{Address, BillingInformation, Currency, CustomerDescriptor};
 use checkout::{Client, Error, StatusCode};
@@ -53,7 +54,7 @@ fn assert_api_error(
 }
 
 #[tokio::test]
-async fn payment_session_request_processed() {
+async fn payment_session_request_created() {
     let Some(client) = client() else { return };
     let Ok(processing_channel_id) = std::env::var("CKO_PROCESSING_CHANNEL_ID") else {
         return;
@@ -180,13 +181,9 @@ async fn payment_session_request_processed_e2e() {
         return;
     };
 
-    let client_builder = fantoccini::ClientBuilder::native();
-    let webdriver = match client_builder.connect("http://localhost:4444").await {
-        Ok(wd) => wd,
-        Err(e) => {
-            println!("Skipping E2E test: webdriver not running at http://localhost:4444 ({})", e);
-            return;
-        }
+    let Ok(public_key) = std::env::var("CKO_PUBLIC_KEY") else {
+        println!("Skipping E2E test: CKO_PUBLIC_KEY is missing (required for Flow client)");
+        return;
     };
 
     let request = CreatePaymentSessionRequest::builder()
@@ -195,8 +192,8 @@ async fn payment_session_request_processed_e2e() {
         .processing_channel_id(processing_channel_id)
         .reference("rust-sdk-test-e2e")
         .billing(valid_billing())
-        .success_url("https://example.com/success")
-        .failure_url("https://example.com/failure")
+        .success_url("http://localhost:4444/success") // local dummy url
+        .failure_url("http://localhost:4444/failure") // local dummy url
         .build();
 
     let response = client
@@ -205,50 +202,171 @@ async fn payment_session_request_processed_e2e() {
         .await
         .unwrap();
 
-    let redirect_url = &response.links.get("redirect").expect("missing redirect link").href;
+    // --- Spawn flow_frontend instead of inline webserver ---
 
-    webdriver.goto(redirect_url).await.expect("failed to navigate");
+    // Build the flow_frontend binary
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let frontend_manifest = std::path::PathBuf::from(manifest_dir)
+        .join("flow_frontend")
+        .join("Cargo.toml");
 
-    // Wait for the iframe or card number input to load
-    let form_result = webdriver.wait()
-        .at_most(std::time::Duration::from_secs(15))
-        .for_element(fantoccini::Locator::Css("iframe, input[type='tel'], input[name='cardNumber']"))
-        .await;
+    let build_status = std::process::Command::new("cargo")
+        .args([
+            "build",
+            "--manifest-path",
+            frontend_manifest.to_str().unwrap(),
+        ])
+        .status()
+        .expect("failed to run cargo build");
+    assert!(build_status.success(), "cargo build flow_frontend failed");
 
-    if let Ok(elem) = form_result {
-        println!("Found payment element: {:?}", elem);
-        
-        // Switch to the payment form iframe if it's an iframe
-        if elem.html(true).await.unwrap_or_default().contains("<iframe") || elem.prop("tagName").await.unwrap_or_default() == Some("IFRAME".to_string()) {
-            webdriver.enter_frame(0).await.ok();
+    // Resolve the binary path from the target directory
+    let binary = std::process::Command::new("cargo")
+        .args([
+            "metadata",
+            "--format-version=1",
+            "--no-deps",
+            "--manifest-path",
+            frontend_manifest.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run cargo metadata");
+    let meta: serde_json::Value = serde_json::from_slice(&binary.stdout).unwrap();
+    let target_dir = meta["target_directory"].as_str().unwrap();
+    let binary_path = std::path::PathBuf::from(target_dir)
+        .join("debug")
+        .join("flow_frontend");
+
+    // Spawn with --port 0 so the OS picks a free port; stdout is piped
+    // so we can read the LISTENING_PORT=<N> line.
+    // Base64-encode the full payment session response so the frontend has all fields
+    let session_json = serde_json::to_string(&response).unwrap();
+    let session_b64 = base64::engine::general_purpose::STANDARD.encode(&session_json);
+
+    let mut child = tokio::process::Command::new(&binary_path)
+        .args(["--payment-session", &session_b64, "--port", "0"])
+        .env("CKO_PUBLIC_KEY", &public_key)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn flow_frontend");
+
+    // Read stdout until we see the LISTENING_PORT=<N> line
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let stdout = child.stdout.take().expect("stdout not captured");
+    let mut reader = BufReader::new(stdout).lines();
+
+    let port: u16 = loop {
+        let line = tokio::time::timeout(std::time::Duration::from_secs(10), reader.next_line())
+            .await
+            .expect("timed out waiting for flow_frontend to print port")
+            .expect("failed to read stdout")
+            .expect("flow_frontend exited before printing port");
+
+        eprintln!("[flow_frontend] {line}");
+        if let Some(port_str) = line.strip_prefix("LISTENING_PORT=") {
+            break port_str.parse().expect("invalid port number");
         }
+    };
 
-        // 1. Fill Card Number
-        if let Ok(card_input) = webdriver.find(fantoccini::Locator::Css("input[name='cardNumber'], input[autocomplete='cc-number'], input[type='tel']")).await {
-            card_input.send_keys("4242424242424242").await.expect("Failed to fill card number");
+    let test_url = format!("http://127.0.0.1:{port}");
+
+    println!("Test URL: {}", test_url);
+
+    let browser_opts = headless_chrome::LaunchOptions::default_builder()
+        .headless(true)
+        .window_size(Some((1920, 1080)))
+        .args(vec![
+            std::ffi::OsStr::new("--disable-web-security"),
+            std::ffi::OsStr::new("--disable-features=IsolateOrigins,site-per-process"),
+            std::ffi::OsStr::new("--disable-site-isolation-trials"),
+        ])
+        .build()
+        .unwrap();
+
+    let browser =
+        headless_chrome::Browser::new(browser_opts).expect("Failed to launch headless chrome");
+
+    let tab = browser
+        .new_tab()
+        .expect("Failed to get new tab");
+
+    println!("Navigating to Test URL: {}", test_url);
+    tab.navigate_to(&test_url).expect("failed to navigate");
+
+    tab.wait_for_element("#flow-container")
+        .expect("failed to wait for flow-container");
+
+    println!("Waiting for Flow Component to load iframes...");
+    // Give time for CheckoutWebComponents to initialize and inject their iframes
+    std::thread::sleep(std::time::Duration::from_secs(4));
+
+    // Fill Cardholder Name
+    tab.evaluate(
+        "let el = document.querySelector('input[name=\"cardholderName\"], input[id=\"cardholderName\"], input[autocomplete=\"cc-name\"], iframe[data-testid*=\"cardholder\"]'); if(el) el.focus();",
+        false
+    ).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let _ = tab.type_str("John Doe");
+
+    // Focus first iframe (card)
+    tab.evaluate("document.querySelector(\"iframe[data-testid='card-number']\").focus()", false).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    tab.type_str("4242424242424242").unwrap();
+
+    // Focus second iframe (expiry)
+    tab.evaluate("document.querySelector(\"iframe[data-testid='card-expiry-date']\").focus()", false).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    tab.type_str("1028").unwrap();
+
+    // Focus third iframe (cvv)
+    tab.evaluate("document.querySelector(\"iframe[data-testid='card-cvv']\").focus()", false).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    tab.type_str("100").unwrap();
+
+    // Sometimes the component takes a moment
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // The DOM has multiple buttons (e.g. the accordion button). Add an ID to the actual Pay button to click natively.
+    tab.evaluate(
+        r#"
+        let b = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Pay') || btn.innerText.includes('Pay')); 
+        if(b) { 
+            b.id = 'checkout-pay-button'; 
+            b.scrollIntoView({block: 'center'}); 
+        } 
+        else { console.error('Pay button not found'); }
+        "#, 
+        false
+    ).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    let submit = tab.wait_for_element("#checkout-pay-button").unwrap();
+    submit.click().unwrap();
+
+    // Give time for the simulated submission to process and the UI to update
+    let start = std::time::Instant::now();
+    let mut success = false;
+    
+    loop {
+        if start.elapsed().as_secs() > 15 {
+            break;
         }
-
-        // 2. Fill Expiry Date
-        if let Ok(expiry_input) = webdriver.find(fantoccini::Locator::Css("input[name='expiryDate'], input[autocomplete='cc-exp']")).await {
-             expiry_input.send_keys("10/28").await.expect("Failed to fill expiry date");
+        let body_text: String = tab.evaluate("document.body.innerText", false).unwrap().value.unwrap().as_str().unwrap().to_owned();
+        if body_text.contains("Payment complete") {
+            success = true;
+            break;
         }
-
-        // 3. Fill CVV
-        if let Ok(cvv_input) = webdriver.find(fantoccini::Locator::Css("input[name='cvv'], input[autocomplete='cc-csc']")).await {
-             cvv_input.send_keys("100").await.expect("Failed to fill cvv");
-        }
-
-        // 4. Click Submit / Pay
-        if let Ok(submit_btn) = webdriver.find(fantoccini::Locator::Css("button[type='submit'], button#pay-button")).await {
-             submit_btn.click().await.expect("Failed to click submit");
-        }
-        
-        // Give time for the simulated submission to process before closing the browser
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    } else {
-        println!("Failed to find payment elements within the timeout.");
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    webdriver.close().await.ok();
+    println!("Checkout success UI marked 'Payment complete': {}", success);
+    
+    // Print captured Javascript console errors
+    let logs_script = "window._capturedLogs ? JSON.stringify(window._capturedLogs) : '[]'";
+    let logs_json = tab.evaluate(logs_script, false).unwrap();
+    println!("JS LOGS: {:?}", logs_json);
+    
+    assert!(success, "Payment did not succeed in UI");
 }

@@ -15,5 +15,8 @@ thiserror = "2"
 [dev-dependencies]
 dotenvy = "0.15"
 fantoccini = "0.22"
+headless_chrome = "1"
 rand = "0.10"
-tokio = { version = "1", features = ["macros", "rt"] }
+serde_json = "1"
+base64 = "0.22"
+tokio = { version = "1", features = ["macros", "rt", "process"] }
