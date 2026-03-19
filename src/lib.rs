@@ -213,12 +213,16 @@ pub struct Client {
 impl Client {
     /// Creates a new client
     #[must_use]
-    pub fn new(username: SecretString, password: SecretString, environment: Environment) -> Client {
+    pub fn new<C, S>(username: C, password: S, environment: Environment) -> Client
+    where
+        C: Into<SecretString>,
+        S: Into<SecretString>,
+    {
         Client {
             http: ReqwestClient::new(),
             environment,
-            username,
-            password,
+            username: username.into(),
+            password: password.into(),
             token_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
