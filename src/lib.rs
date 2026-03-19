@@ -16,8 +16,9 @@ use std::time::{Duration, Instant};
 use std::{convert::TryFrom, fmt, str::FromStr};
 
 pub use reqwest::StatusCode;
+pub use secrecy::{ExposeSecret, SecretString};
+
 use reqwest::{Client as ReqwestClient, Error as ReqwestError, Response};
-use secrecy::{ExposeSecret, SecretString};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
