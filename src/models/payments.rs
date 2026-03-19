@@ -282,3 +282,64 @@ pub type GetPaymentDetailsResponse = PaymentDetails;
 
 /// Response to get payment actions
 pub type GetPaymentActionsResponse = Vec<Action>;
+
+/// Request parameters for listing payments
+///
+/// [`GET /payments`](https://api-reference.checkout.com/#operation/getPaymentsList)
+#[derive(Serialize, Debug, Clone, Builder)]
+pub struct GetPaymentListRequest {
+    /// A reference that can be used to identify the payment, such as an order
+    /// number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
+    pub reference: Option<String>,
+
+    /// The number of results to retrieve (page size)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+
+    /// The number of results to skip
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip: Option<u32>,
+}
+
+impl GetPaymentListRequest {
+    /// Build the query string (including the leading `?`) from non-None fields.
+    /// Returns an empty string when no fields are set.
+    #[must_use]
+    pub fn to_query_string(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(ref reference) = self.reference {
+            parts.push(format!("reference={reference}"));
+        }
+        if let Some(limit) = self.limit {
+            parts.push(format!("limit={limit}"));
+        }
+        if let Some(skip) = self.skip {
+            parts.push(format!("skip={skip}"));
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", parts.join("&"))
+        }
+    }
+}
+
+/// Response for listing payments
+///
+/// [`GET /payments`](https://api-reference.checkout.com/#operation/getPaymentsList)
+#[derive(Deserialize, Debug, Clone)]
+pub struct GetPaymentListResponse {
+    /// The page size used for this response
+    pub limit: u32,
+
+    /// The number of results skipped
+    pub skip: u32,
+
+    /// The total number of payments matching the query
+    pub total_count: u32,
+
+    /// The list of payments
+    pub data: Vec<PaymentDetails>,
+}

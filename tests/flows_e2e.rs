@@ -5,7 +5,8 @@
 use axum::{Router, extract::State, response::Html, routing::get};
 use checkout::Client;
 use checkout::models::flows::CreatePaymentSessionRequest;
-use checkout::models::shared::{Address, BillingInformation, Currency};
+use checkout::models::payments::GetPaymentListRequest;
+use checkout::models::shared::{Address, BillingInformation, Currency, PaymentStatus};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,9 @@ const TEST_CARDHOLDER_NAME: &str = "John Doe";
 /// Timeout (seconds) for waiting on the payment result UI.
 const PAYMENT_RESULT_TIMEOUT_SECS: u64 = 15;
 
+/// Timeout (seconds) for waiting on the payment to appear in list API.
+const PAYMENT_LIST_TIMEOUT_SECS: u64 = 30;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn payment_session_request_processed_e2e() {
@@ -98,11 +102,14 @@ async fn payment_session_request_processed_e2e() {
         return;
     };
 
+    // Use a unique reference per test run so we can look it up later
+    let reference = format!("e2e-{}", rand::random::<u32>());
+
     let request = CreatePaymentSessionRequest::builder()
         .amount(2500)
         .currency(Currency::USD)
         .processing_channel_id(processing_channel_id)
-        .reference("rust-sdk-test-e2e")
+        .reference(&reference)
         .billing(valid_billing())
         .success_url("http://localhost:4444/success") // local dummy url
         .failure_url("http://localhost:4444/failure") // local dummy url
@@ -208,4 +215,60 @@ async fn payment_session_request_processed_e2e() {
     println!("JS LOGS: {:?}", logs_json);
 
     assert!(success, "Payment did not succeed in UI");
+
+    // --- Server-side verification via Get Payment List ---
+    println!("Verifying payment status via API (reference={reference})...");
+
+    let list_request = GetPaymentListRequest::builder()
+        .reference(&reference)
+        .limit(1_u32)
+        .build();
+
+    let start = std::time::Instant::now();
+    let mut payment_found = false;
+
+    loop {
+        if start.elapsed().as_secs() > PAYMENT_LIST_TIMEOUT_SECS {
+            break;
+        }
+
+        match client.payments().get_payment_list(&list_request).await {
+            Ok(list_response) => {
+                if list_response.total_count > 0 {
+                    let payment = &list_response.data[0];
+                    println!(
+                        "Payment found: id={}, status={:?}, approved={:?}",
+                        payment.id, payment.status, payment.approved
+                    );
+                    assert_eq!(
+                        payment.approved,
+                        Some(true),
+                        "Payment was not approved: {:?}",
+                        payment.status
+                    );
+                    assert!(
+                        matches!(
+                            payment.status,
+                            PaymentStatus::Authorized | PaymentStatus::Captured
+                        ),
+                        "Unexpected payment status: {:?}",
+                        payment.status
+                    );
+                    payment_found = true;
+                    break;
+                }
+            }
+            Err(e) => {
+                println!("Payment list query error (will retry): {e}");
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    assert!(
+        payment_found,
+        "Payment with reference '{reference}' was not found via GET /payments within {PAYMENT_LIST_TIMEOUT_SECS}s"
+    );
 }
+

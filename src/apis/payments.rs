@@ -137,10 +137,29 @@ impl<'a> Payments<'a> {
         );
         self.client.send_post_request("gateway", &url, &body).await
     }
+
+    /// Get payment list
+    ///
+    /// Returns a list of payments matching the specified query parameters.
+    /// Only returns payments initiated from June 2022 onwards.
+    ///
+    /// [`GET /payments`](https://api-reference.checkout.com/#operation/getPaymentsList)
+    pub async fn get_payment_list(
+        &self,
+        request: &GetPaymentListRequest,
+    ) -> Result<GetPaymentListResponse, Error> {
+        let url = format!(
+            "{}/payments{}",
+            self.client.environment.api_url(),
+            request.to_query_string()
+        );
+        self.client.send_get_request("gateway", &url).await
+    }
 }
 
 use crate::models::payments::{
     CapturePaymentBody, CapturePaymentResponse, CreatePaymentRequest, CreatePaymentResponse,
-    GetPaymentActionsResponse, GetPaymentDetailsResponse, RefundPaymentBody, RefundPaymentResponse,
-    VoidPaymentBody, VoidPaymentResponse,
+    GetPaymentActionsResponse, GetPaymentDetailsResponse, GetPaymentListRequest,
+    GetPaymentListResponse, RefundPaymentBody, RefundPaymentResponse, VoidPaymentBody,
+    VoidPaymentResponse,
 };
