@@ -4,7 +4,7 @@
 //! `--payment-session` CLI argument (base64-encoded JSON of the full
 //! `CreatePaymentSessionResponse`) to dynamically configure the payment page.
 
-use axum::{Router, response::Html, routing::get};
+use axum::{Router, extract::State, response::Html, routing::get};
 use base64::Engine;
 use clap::Parser;
 use std::sync::Arc;
@@ -48,13 +48,9 @@ async fn main() {
         payment_session_json,
     });
 
-    let app = Router::new().route(
-        "/",
-        get({
-            let state = Arc::clone(&state);
-            move || index(state)
-        }),
-    );
+    let app = Router::new()
+        .route("/", get(index))
+        .with_state(state);
 
     let addr = format!("0.0.0.0:{}", args.port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
@@ -63,13 +59,11 @@ async fn main() {
     // Machine-readable line — parsed by test harness
     println!("LISTENING_PORT={actual_port}");
     println!("Listening on http://localhost:{actual_port}");
-    println!("Payment session: {}", state.payment_session_json);
-    println!("Public key: {}", state.public_key);
 
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn index(state: Arc<AppState>) -> Html<String> {
+async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     let html = format!(
         r#"<!doctype html>
 <html lang="en">
@@ -149,6 +143,16 @@ async fn index(state: Arc<AppState>) -> Html<String> {
                     paymentSession,
                     publicKey,
                     environment: 'sandbox',
+                    onPaymentCompleted: function(_component, paymentResponse) {{
+                        console.warn("Payment completed: " + JSON.stringify(paymentResponse));
+                        document.body.innerText = 'Payment complete';
+                        document.getElementById('successToast').classList.add('show');
+                    }},
+                    onPaymentFailed: function(_component, error) {{
+                        console.error("Payment failed: " + JSON.stringify(error));
+                        document.body.innerText = 'Payment failed';
+                        document.getElementById('failedToast').classList.add('show');
+                    }},
                 }});
                 
                 console.warn("Checkout component initialized");

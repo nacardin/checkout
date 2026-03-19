@@ -174,7 +174,20 @@ async fn payment_session_request_invalid_customer_email() {
     );
 }
 
+/// Test card number for sandbox (Visa success).
+const TEST_CARD_NUMBER: &str = "4242424242424242";
+/// Test expiry date (MMYY).
+const TEST_CARD_EXPIRY: &str = "1028";
+/// Test CVV.
+const TEST_CARD_CVV: &str = "100";
+/// Test cardholder name.
+const TEST_CARDHOLDER_NAME: &str = "John Doe";
+
+/// Timeout (seconds) for waiting on the payment result UI.
+const PAYMENT_RESULT_TIMEOUT_SECS: u64 = 15;
+
 #[tokio::test]
+#[ignore = "requires Chrome, network access, CKO_PUBLIC_KEY and CKO_PROCESSING_CHANNEL_ID"]
 async fn payment_session_request_processed_e2e() {
     let Some(client) = client() else { return };
     let Ok(processing_channel_id) = std::env::var("CKO_PROCESSING_CHANNEL_ID") else {
@@ -202,40 +215,45 @@ async fn payment_session_request_processed_e2e() {
         .await
         .unwrap();
 
-    // --- Spawn flow_frontend instead of inline webserver ---
+    // --- Spawn flow_frontend ---
 
-    // Build the flow_frontend binary
+    // Build the flow_frontend binary and extract the executable path from JSON output
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let frontend_manifest = std::path::PathBuf::from(manifest_dir)
         .join("flow_frontend")
         .join("Cargo.toml");
 
-    let build_status = std::process::Command::new("cargo")
+    let build_output = std::process::Command::new("cargo")
         .args([
             "build",
             "--manifest-path",
             frontend_manifest.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to run cargo build");
-    assert!(build_status.success(), "cargo build flow_frontend failed");
-
-    // Resolve the binary path from the target directory
-    let binary = std::process::Command::new("cargo")
-        .args([
-            "metadata",
-            "--format-version=1",
-            "--no-deps",
-            "--manifest-path",
-            frontend_manifest.to_str().unwrap(),
+            "--message-format=json",
         ])
         .output()
-        .expect("failed to run cargo metadata");
-    let meta: serde_json::Value = serde_json::from_slice(&binary.stdout).unwrap();
-    let target_dir = meta["target_directory"].as_str().unwrap();
-    let binary_path = std::path::PathBuf::from(target_dir)
-        .join("debug")
-        .join("flow_frontend");
+        .expect("failed to run cargo build");
+    assert!(
+        build_output.status.success(),
+        "cargo build flow_frontend failed"
+    );
+
+    let binary_path = std::str::from_utf8(&build_output.stdout)
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find_map(|msg| {
+            if msg["reason"] == "compiler-artifact"
+                && msg["target"]["name"] == "flow_frontend"
+                && msg["target"]["kind"]
+                    .as_array()
+                    .is_some_and(|k| k.iter().any(|v| v == "bin"))
+            {
+                msg["executable"].as_str().map(std::path::PathBuf::from)
+            } else {
+                None
+            }
+        })
+        .expect("flow_frontend binary not found in cargo build output");
 
     // Spawn with --port 0 so the OS picks a free port; stdout is piped
     // so we can read the LISTENING_PORT=<N> line.
@@ -288,9 +306,7 @@ async fn payment_session_request_processed_e2e() {
     let browser =
         headless_chrome::Browser::new(browser_opts).expect("Failed to launch headless chrome");
 
-    let tab = browser
-        .new_tab()
-        .expect("Failed to get new tab");
+    let tab = browser.new_tab().expect("Failed to get new tab");
 
     println!("Navigating to Test URL: {}", test_url);
     tab.navigate_to(&test_url).expect("failed to navigate");
@@ -300,33 +316,33 @@ async fn payment_session_request_processed_e2e() {
 
     println!("Waiting for Flow Component to load iframes...");
     // Give time for CheckoutWebComponents to initialize and inject their iframes
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 
     // Fill Cardholder Name
     tab.evaluate(
         "let el = document.querySelector('input[name=\"cardholderName\"], input[id=\"cardholderName\"], input[autocomplete=\"cc-name\"], iframe[data-testid*=\"cardholder\"]'); if(el) el.focus();",
         false
     ).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    let _ = tab.type_str("John Doe");
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    tab.type_str(TEST_CARDHOLDER_NAME).unwrap();
 
-    // Focus first iframe (card)
+    // Focus first iframe (card number)
     tab.evaluate("document.querySelector(\"iframe[data-testid='card-number']\").focus()", false).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    tab.type_str("4242424242424242").unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    tab.type_str(TEST_CARD_NUMBER).unwrap();
 
     // Focus second iframe (expiry)
     tab.evaluate("document.querySelector(\"iframe[data-testid='card-expiry-date']\").focus()", false).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    tab.type_str("1028").unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    tab.type_str(TEST_CARD_EXPIRY).unwrap();
 
     // Focus third iframe (cvv)
     tab.evaluate("document.querySelector(\"iframe[data-testid='card-cvv']\").focus()", false).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    tab.type_str("100").unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    tab.type_str(TEST_CARD_CVV).unwrap();
 
-    // Sometimes the component takes a moment
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Allow the component a moment to process the filled fields
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // The DOM has multiple buttons (e.g. the accordion button). Add an ID to the actual Pay button to click natively.
     tab.evaluate(
@@ -337,36 +353,47 @@ async fn payment_session_request_processed_e2e() {
             b.scrollIntoView({block: 'center'}); 
         } 
         else { console.error('Pay button not found'); }
-        "#, 
-        false
-    ).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    
+        "#,
+        false,
+    )
+    .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     let submit = tab.wait_for_element("#checkout-pay-button").unwrap();
     submit.click().unwrap();
 
-    // Give time for the simulated submission to process and the UI to update
+    // Poll until the payment result appears in the body text
     let start = std::time::Instant::now();
     let mut success = false;
-    
+
     loop {
-        if start.elapsed().as_secs() > 15 {
+        if start.elapsed().as_secs() > PAYMENT_RESULT_TIMEOUT_SECS {
             break;
         }
-        let body_text: String = tab.evaluate("document.body.innerText", false).unwrap().value.unwrap().as_str().unwrap().to_owned();
+        let body_text: String = tab
+            .evaluate("document.body.innerText", false)
+            .unwrap()
+            .value
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
         if body_text.contains("Payment complete") {
             success = true;
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    println!("Checkout success UI marked 'Payment complete': {}", success);
-    
+    println!(
+        "Checkout success UI marked 'Payment complete': {}",
+        success
+    );
+
     // Print captured Javascript console errors
     let logs_script = "window._capturedLogs ? JSON.stringify(window._capturedLogs) : '[]'";
     let logs_json = tab.evaluate(logs_script, false).unwrap();
     println!("JS LOGS: {:?}", logs_json);
-    
+
     assert!(success, "Payment did not succeed in UI");
 }
