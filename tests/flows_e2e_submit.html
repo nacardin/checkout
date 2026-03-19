@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkout Flow – Submit E2E</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 2rem;
+            width: 100%;
+            max-width: 480px;
+        }
+    </style>
+</head>
+<body>
+    <form>
+        <div class="container">
+            <div id="flow-container"></div>
+        </div>
+        <span id="error-message"></span>
+    </form>
+
+    <script>
+        // Capture console errors for debugging
+        window._capturedLogs = [];
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        console.error = function(...args) { window._capturedLogs.push("ERROR: " + args.join(" ")); originalError.apply(console, args); };
+        console.warn = function(...args) { window._capturedLogs.push("WARN: " + args.join(" ")); originalWarn.apply(console, args); };
+        window.addEventListener('unhandledrejection', function(event) {
+            window._capturedLogs.push("REJECTION: " + JSON.stringify(event.reason, Object.getOwnPropertyNames(event.reason)));
+        });
+
+        // Will be set by handleSubmit callback
+        window._sessionData = null;
+        window._handleSubmitResolve = null;
+    </script>
+    <script src="https://checkout-web-components.checkout.com/index.js"></script>
+    <script>
+        // E2E test helpers (same as flows_e2e.html)
+        window.focusCardholderName = function() {
+            let el = document.querySelector('input[name="cardholderName"], input[id="cardholderName"], input[autocomplete="cc-name"], iframe[data-testid*="cardholder"]');
+            if(el) el.focus();
+        };
+        window.focusCardNumber = function() {
+            let el = document.querySelector("iframe[data-testid='card-number']");
+            if(el) el.focus();
+        };
+        window.focusCardExpiry = function() {
+            let el = document.querySelector("iframe[data-testid='card-expiry-date']");
+            if(el) el.focus();
+        };
+        window.focusCardCvv = function() {
+            let el = document.querySelector("iframe[data-testid='card-cvv']");
+            if(el) el.focus();
+        };
+        window.preparePayButton = function() {
+            let b = Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('Pay') || btn.innerText.includes('Pay'));
+            if(b) {
+                b.id = 'checkout-pay-button';
+                b.scrollIntoView({block: 'center'});
+            } else {
+                console.error('Pay button not found');
+            }
+        };
+        window.getSessionData = function() {
+            return window._sessionData || '';
+        };
+        window.getCapturedLogs = function() {
+            return window._capturedLogs ? JSON.stringify(window._capturedLogs) : '[]';
+        };
+    </script>
+    <script>
+        (async () => {
+            try {
+                console.warn("Starting initialization (submit mode)");
+                const publicKey  = '__PUBLIC_KEY__';
+                const paymentSession = __PAYMENT_SESSION_JSON__;
+
+                const checkout = await CheckoutWebComponents({
+                    paymentSession,
+                    publicKey,
+                    environment: 'sandbox',
+                    onPaymentCompleted: function(_component, paymentResponse) {
+                        console.warn("onPaymentCompleted (unexpected in submit mode): " + JSON.stringify(paymentResponse));
+                    },
+                    onPaymentFailed: function(_component, error) {
+                        console.error("onPaymentFailed: " + JSON.stringify(error));
+                    },
+                });
+
+                console.warn("Checkout component initialized (submit mode)");
+
+                const flow = checkout.create('flow', {
+                    handleSubmit: async (paymentSessionId, sessionData) => {
+                        console.warn("handleSubmit called, paymentSessionId=" + paymentSessionId);
+                        // Store session_data for the Rust test to retrieve
+                        window._sessionData = sessionData;
+                        document.body.insertAdjacentText('beforeend', ' SessionDataReady');
+
+                        // Return a promise that the Rust test will resolve
+                        // by calling window.resolveSubmit() after calling
+                        // submit_payment_session server-side
+                        return new Promise((resolve) => {
+                            window._handleSubmitResolve = resolve;
+                        });
+                    },
+                });
+                flow.mount('#flow-container');
+                console.warn("Flow mounted (submit mode)");
+            } catch (err) {
+                console.error("Mount error: " + err.message + "\n" + err.stack);
+            }
+        })();
+
+        // Called by the Rust test after server-side submit completes
+        window.resolveSubmit = function(responseJson) {
+            if (window._handleSubmitResolve) {
+                window._handleSubmitResolve(JSON.parse(responseJson));
+                window._handleSubmitResolve = null;
+                console.warn("handleSubmit promise resolved");
+            }
+        };
+    </script>
+</body>
+</html>

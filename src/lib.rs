@@ -30,21 +30,6 @@ use apis::CardMetadata;
 use apis::Flows;
 use apis::Payments;
 
-// Re-export types for backward compatibility
-pub use models::shared::{
-    Address, Amount, BillingDescriptor, Currency, CustomerDescriptor, DestinationAccountHolder,
-    DestinationInstruction, Metadata, PaymentDetails, PaymentProcessed, PaymentRecipient,
-    PaymentRequestDestination, PaymentRequestSource, PaymentSenderDetails, PaymentStatus,
-    PaymentType, PendingPayment,
-};
-pub use models::payments::{
-    CapturePaymentBody, CapturePaymentResponse, CreatePaymentRequest, CreatePaymentResponse,
-    GetPaymentActionsResponse, GetPaymentDetailsResponse, GetPaymentListRequest,
-    GetPaymentListResponse, RefundPaymentBody, RefundPaymentResponse, VoidPaymentBody,
-    VoidPaymentResponse,
-};
-pub use models::metadata::CardMetadataSource;
-
 /// An error that was reported by the Checkout API
 #[derive(Deserialize, Debug)]
 pub struct ApiError {

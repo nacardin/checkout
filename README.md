@@ -83,3 +83,47 @@ let request = CreatePaymentRequest::builder()
 
 let response = client.create_payment(&request).await.unwrap();
 ```
+
+## Testing
+
+All tests hit the **Checkout.com Sandbox** and require valid API credentials.
+
+### Environment Variables
+
+Create a `.env` file (git-ignored) with:
+
+```env
+CKO_USERNAME=<OAuth client ID>
+CKO_PASSWORD=<OAuth client secret>
+CKO_ENVIRONMENT=sandbox
+CKO_PROCESSING_CHANNEL_ID=<sandbox processing channel>
+CKO_PUBLIC_KEY=<sandbox public key>          # E2E tests only
+CKO_CURRENCY_ACCOUNT_ID=<currency account>   # payout tests only
+```
+
+### Test Dependencies
+
+| Crate | Purpose |
+|---|---|
+| `tokio` | Async test runtime |
+| `dotenvy` | Load `.env` credentials |
+| `axum` | Inline HTTP server for E2E flow pages |
+| `headless_chrome` | Browser automation for E2E tests |
+| `rand` | Unique payment references |
+| `base64` | Encoding helpers |
+
+### Running Tests
+
+```bash
+# Integration tests (API-level, no browser)
+cargo test --test flows --test payments --test metadata
+
+# E2E tests (requires headless Chrome)
+cargo test --test flows_e2e -- --ignored
+
+# All tests
+cargo test -- --include-ignored
+```
+
+> [!NOTE]
+> Tests that depend on missing environment variables silently return early rather than failing, so a partial `.env` will skip rather than break the suite.

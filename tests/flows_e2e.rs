@@ -4,7 +4,7 @@
 
 use axum::{Router, extract::State, response::Html, routing::get};
 use checkout::Client;
-use checkout::models::flows::CreatePaymentSessionRequest;
+use checkout::models::flows::{CreatePaymentSessionRequest, SubmitPaymentSessionRequest};
 use checkout::models::payments::GetPaymentListRequest;
 use checkout::models::shared::{Address, BillingInformation, Currency, PaymentStatus};
 use std::sync::Arc;
@@ -42,7 +42,7 @@ struct AppState {
     payment_session_json: String,
 }
 
-/// Start an Axum server on a random port serving the Checkout Flow HTML page.
+/// Start an Axum server on a random port serving the Checkout Flow HTML pages.
 /// Returns the port the server is listening on.
 async fn start_flow_server(public_key: String, payment_session_json: String) -> u16 {
     let state = Arc::new(AppState {
@@ -50,7 +50,10 @@ async fn start_flow_server(public_key: String, payment_session_json: String) -> 
         payment_session_json,
     });
 
-    let app = Router::new().route("/", get(index)).with_state(state);
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/submit", get(index_submit))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -70,8 +73,16 @@ async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     Html(html)
 }
 
+async fn index_submit(State(state): State<Arc<AppState>>) -> Html<String> {
+    let html = include_str!("flows_e2e_submit.html")
+        .replace("__PUBLIC_KEY__", &state.public_key)
+        .replace("__PAYMENT_SESSION_JSON__", &state.payment_session_json);
+
+    Html(html)
+}
+
 // ---------------------------------------------------------------------------
-// E2E test
+// Shared browser helpers
 // ---------------------------------------------------------------------------
 
 /// Test card number for sandbox (Visa success).
@@ -89,46 +100,7 @@ const PAYMENT_RESULT_TIMEOUT_SECS: u64 = 15;
 /// Timeout (seconds) for waiting on the payment to appear in list API.
 const PAYMENT_LIST_TIMEOUT_SECS: u64 = 30;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore]
-async fn payment_session_request_processed_e2e() {
-    let Some(client) = client() else { return };
-    let Ok(processing_channel_id) = std::env::var("CKO_PROCESSING_CHANNEL_ID") else {
-        return;
-    };
-
-    let Ok(public_key) = std::env::var("CKO_PUBLIC_KEY") else {
-        println!("Skipping E2E test: CKO_PUBLIC_KEY is missing (required for Flow client)");
-        return;
-    };
-
-    // Use a unique reference per test run so we can look it up later
-    let reference = format!("e2e-{}", rand::random::<u32>());
-
-    let request = CreatePaymentSessionRequest::builder()
-        .amount(2500)
-        .currency(Currency::USD)
-        .processing_channel_id(processing_channel_id)
-        .reference(&reference)
-        .billing(valid_billing())
-        .success_url("http://localhost:4444/success") // local dummy url
-        .failure_url("http://localhost:4444/failure") // local dummy url
-        .build();
-
-    let response = client
-        .flows()
-        .create_payment_session(&request)
-        .await
-        .unwrap();
-
-    // --- Start inline Axum server ---
-
-    let session_json = serde_json::to_string(&response).unwrap();
-    let port = start_flow_server(public_key, session_json).await;
-
-    let test_url = format!("http://127.0.0.1:{port}");
-    println!("Test URL: {}", test_url);
-
+fn launch_browser() -> headless_chrome::Browser {
     let browser_opts = headless_chrome::LaunchOptions::default_builder()
         .headless(true)
         .window_size(Some((1920, 1080)))
@@ -140,19 +112,12 @@ async fn payment_session_request_processed_e2e() {
         .build()
         .unwrap();
 
-    let browser =
-        headless_chrome::Browser::new(browser_opts).expect("Failed to launch headless chrome");
+    headless_chrome::Browser::new(browser_opts).expect("Failed to launch headless chrome")
+}
 
-    let tab = browser.new_tab().expect("Failed to get new tab");
-
-    println!("Navigating to Test URL: {}", test_url);
-    tab.navigate_to(&test_url).expect("failed to navigate");
-
-    tab.wait_for_element("#flow-container")
-        .expect("failed to wait for flow-container");
-
+/// Fill in test card details on the Flow page.
+async fn fill_card_details(tab: &headless_chrome::Tab) {
     println!("Waiting for Flow Component to load iframes...");
-    // Give time for CheckoutWebComponents to initialize and inject their iframes
     tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 
     // Fill Cardholder Name
@@ -177,50 +142,23 @@ async fn payment_session_request_processed_e2e() {
 
     // Allow the component a moment to process the filled fields
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+}
 
-    // The DOM has multiple buttons (e.g. the accordion button). Add an ID to the actual Pay button to click natively.
+/// Prepare and click the Pay button.
+fn click_pay_button(tab: &headless_chrome::Tab) {
     tab.evaluate("window.preparePayButton()", false).unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
     let submit = tab.wait_for_element("#checkout-pay-button").unwrap();
     submit.click().unwrap();
+}
 
-    // Poll until the payment result appears in the body text
-    let start = std::time::Instant::now();
-    let mut success = false;
-
-    loop {
-        if start.elapsed().as_secs() > PAYMENT_RESULT_TIMEOUT_SECS {
-            break;
-        }
-        let body_text: String = tab
-            .evaluate("window.getBodyText()", false)
-            .unwrap()
-            .value
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned();
-        if body_text.contains("Payment complete") {
-            success = true;
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    println!("Checkout success UI marked 'Payment complete': {}", success);
-
-    // Print captured Javascript console errors
-    let logs_json = tab.evaluate("window.getCapturedLogs()", false).unwrap();
-    println!("JS LOGS: {:?}", logs_json);
-
-    assert!(success, "Payment did not succeed in UI");
-
-    // --- Server-side verification via Get Payment List ---
+/// Verify the payment appears in the payments list and is approved.
+async fn verify_payment_via_api(client: &Client, reference: &str) {
     println!("Verifying payment status via API (reference={reference})...");
 
     let list_request = GetPaymentListRequest::builder()
-        .reference(&reference)
+        .reference(reference)
         .limit(1_u32)
         .build();
 
@@ -272,3 +210,226 @@ async fn payment_session_request_processed_e2e() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// E2E test: default Flow (auto-submit)
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore]
+async fn payment_session_request_processed_e2e() {
+    let Some(client) = client() else { return };
+    let Ok(processing_channel_id) = std::env::var("CKO_PROCESSING_CHANNEL_ID") else {
+        return;
+    };
+
+    let Ok(public_key) = std::env::var("CKO_PUBLIC_KEY") else {
+        println!("Skipping E2E test: CKO_PUBLIC_KEY is missing (required for Flow client)");
+        return;
+    };
+
+    // Use a unique reference per test run so we can look it up later
+    let reference = format!("e2e-{}", rand::random::<u32>());
+
+    let request = CreatePaymentSessionRequest::builder()
+        .amount(2500)
+        .currency(Currency::USD)
+        .processing_channel_id(processing_channel_id)
+        .reference(&reference)
+        .billing(valid_billing())
+        .success_url("http://localhost:4444/success") // local dummy url
+        .failure_url("http://localhost:4444/failure") // local dummy url
+        .build();
+
+    let response = client
+        .flows()
+        .create_payment_session(&request)
+        .await
+        .unwrap();
+
+    // --- Start inline Axum server ---
+
+    let session_json = serde_json::to_string(&response).unwrap();
+    let port = start_flow_server(public_key, session_json).await;
+
+    let test_url = format!("http://127.0.0.1:{port}");
+    println!("Test URL: {}", test_url);
+
+    let browser = launch_browser();
+    let tab = browser.new_tab().expect("Failed to get new tab");
+
+    println!("Navigating to Test URL: {}", test_url);
+    tab.navigate_to(&test_url).expect("failed to navigate");
+
+    tab.wait_for_element("#flow-container")
+        .expect("failed to wait for flow-container");
+
+    fill_card_details(&tab).await;
+    click_pay_button(&tab);
+
+    // Poll until the payment result appears in the body text
+    let start = std::time::Instant::now();
+    let mut success = false;
+
+    loop {
+        if start.elapsed().as_secs() > PAYMENT_RESULT_TIMEOUT_SECS {
+            break;
+        }
+        let body_text: String = tab
+            .evaluate("window.getBodyText()", false)
+            .unwrap()
+            .value
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        if body_text.contains("Payment complete") {
+            success = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    println!("Checkout success UI marked 'Payment complete': {}", success);
+
+    // Print captured Javascript console errors
+    let logs_json = tab.evaluate("window.getCapturedLogs()", false).unwrap();
+    println!("JS LOGS: {:?}", logs_json);
+
+    assert!(success, "Payment did not succeed in UI");
+
+    // --- Server-side verification via Get Payment List ---
+    verify_payment_via_api(&client, &reference).await;
+}
+
+// ---------------------------------------------------------------------------
+// E2E test: server-side submit via handleSubmit callback
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore]
+async fn submit_payment_session_e2e() {
+    let Some(client) = client() else { return };
+    let Ok(processing_channel_id) = std::env::var("CKO_PROCESSING_CHANNEL_ID") else {
+        return;
+    };
+
+    let Ok(public_key) = std::env::var("CKO_PUBLIC_KEY") else {
+        println!("Skipping E2E test: CKO_PUBLIC_KEY is missing (required for Flow client)");
+        return;
+    };
+
+    let reference = format!("e2e-submit-{}", rand::random::<u32>());
+
+    // 1. Create a payment session
+    let request = CreatePaymentSessionRequest::builder()
+        .amount(3500)
+        .currency(Currency::USD)
+        .processing_channel_id(processing_channel_id)
+        .reference(&reference)
+        .billing(valid_billing())
+        .success_url("http://localhost:4444/success")
+        .failure_url("http://localhost:4444/failure")
+        .build();
+
+    let session = client
+        .flows()
+        .create_payment_session(&request)
+        .await
+        .unwrap();
+
+    let payment_session_id = session.id.clone();
+    println!("Created payment session: {payment_session_id}");
+
+    // 2. Start Axum server with submit HTML page
+    let session_json = serde_json::to_string(&session).unwrap();
+    let port = start_flow_server(public_key, session_json).await;
+
+    let test_url = format!("http://127.0.0.1:{port}/submit");
+    println!("Test URL: {}", test_url);
+
+    // 3. Launch browser and navigate to submit page
+    let browser = launch_browser();
+    let tab = browser.new_tab().expect("Failed to get new tab");
+
+    println!("Navigating to submit page: {}", test_url);
+    tab.navigate_to(&test_url).expect("failed to navigate");
+
+    tab.wait_for_element("#flow-container")
+        .expect("failed to wait for flow-container");
+
+    // 4. Fill in card details and click Pay
+    fill_card_details(&tab).await;
+    click_pay_button(&tab);
+
+    // 5. Wait for handleSubmit to capture session_data
+    println!("Waiting for handleSubmit to capture session_data...");
+    let start = std::time::Instant::now();
+    let mut session_data = String::new();
+
+    loop {
+        if start.elapsed().as_secs() > PAYMENT_RESULT_TIMEOUT_SECS {
+            break;
+        }
+        let body_text: String = tab
+            .evaluate("window.getBodyText()", false)
+            .unwrap()
+            .value
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        if body_text.contains("SessionDataReady") {
+            let sd = tab
+                .evaluate("window.getSessionData()", false)
+                .unwrap()
+                .value
+                .unwrap();
+            session_data = sd.as_str().unwrap().to_owned();
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Print captured Javascript console errors
+    let logs_json = tab.evaluate("window.getCapturedLogs()", false).unwrap();
+    println!("JS LOGS: {:?}", logs_json);
+
+    assert!(
+        !session_data.is_empty(),
+        "handleSubmit did not capture session_data within {PAYMENT_RESULT_TIMEOUT_SECS}s"
+    );
+    println!(
+        "Got session_data ({}... {} chars)",
+        &session_data[..session_data.len().min(40)],
+        session_data.len()
+    );
+
+    // 6. Call submit_payment_session server-side
+    let submit_request = SubmitPaymentSessionRequest::builder()
+        .session_data(&session_data)
+        .build();
+
+    let submit_response = client
+        .flows()
+        .submit_payment_session(&payment_session_id, &submit_request)
+        .await
+        .unwrap();
+
+    println!("Submit response: {:#?}", submit_response);
+    assert!(
+        !submit_response.id.is_empty(),
+        "Expected a payment ID in submit response"
+    );
+
+    // 7. Resolve the handleSubmit promise in the browser so Flow can update UI
+    let response_json = serde_json::to_string(&serde_json::json!({
+        "id": submit_response.id,
+        "status": submit_response.status,
+    }))
+    .unwrap();
+    let js = format!("window.resolveSubmit('{}')", response_json.replace('\'', "\\'"));
+    tab.evaluate(&js, false).unwrap();
+
+    // 8. Verify the payment via API
+    verify_payment_via_api(&client, &reference).await;
+}
