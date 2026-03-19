@@ -112,13 +112,13 @@
                     environment: 'sandbox',
                     onPaymentCompleted: function(_component, paymentResponse) {
                         console.warn("Payment completed: " + JSON.stringify(paymentResponse));
-                        document.body.innerText = 'Payment complete';
                         document.getElementById('successToast').classList.add('show');
+                        document.body.insertAdjacentText('beforeend', ' Payment complete');
                     },
                     onPaymentFailed: function(_component, error) {
                         console.error("Payment failed: " + JSON.stringify(error));
-                        document.body.innerText = 'Payment failed';
                         document.getElementById('failedToast').classList.add('show');
+                        document.body.insertAdjacentText('beforeend', ' Payment failed');
                     },
                 });
                 

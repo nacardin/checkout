@@ -85,7 +85,7 @@ const TEST_CARDHOLDER_NAME: &str = "John Doe";
 /// Timeout (seconds) for waiting on the payment result UI.
 const PAYMENT_RESULT_TIMEOUT_SECS: u64 = 15;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore]
 async fn payment_session_request_processed_e2e() {
     let Some(client) = client() else { return };
